@@ -1,0 +1,13 @@
+{
+  "name": "video-converter",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "dev": "nodemon backend/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.1",
+    "nodemon": "^3.0.1"
+  }
+}
