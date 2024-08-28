@@ -14,6 +14,17 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Ensure directories exist
+const ensureDirExists = (dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir);
+  }
+};
+
+ensureDirExists(path.join(__dirname, "uploads"));
+ensureDirExists(path.join(__dirname, "converted"));
+ensureDirExists(path.join(__dirname, "temp"));
+
 // Setup storage for multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -70,22 +81,27 @@ app.post("/convert", upload.single("video"), (req, res) => {
     const hasAudio = metadata.streams.some(
       (stream) => stream.codec_type === "audio"
     );
-    if (!hasAudio) {
-      console.warn("No audio stream detected in the input file.");
-    }
 
-    ffmpeg(file.path)
+    const command = ffmpeg(file.path)
       .output(outputFilePath)
       .videoCodec("libx264")
-      .audioCodec(hasAudio ? "aac" : null)
       .videoBitrate(ffmpegOptions.videoBitrate)
-      .audioBitrate(ffmpegOptions.audioBitrate)
       .outputOptions("-preset", ffmpegOptions.preset)
       .outputOptions("-crf", ffmpegOptions.crf)
       .outputOptions("-pix_fmt", "yuv420p")
       .outputOptions("-movflags", "+faststart")
-      .outputOptions("-map", "0:v:0")
-      .outputOptions(hasAudio ? "-map 0:a:0" : "")
+      .outputOptions("-map", "0:v:0");
+
+    if (hasAudio) {
+      command
+        .audioCodec("aac")
+        .audioBitrate(ffmpegOptions.audioBitrate)
+        .outputOptions("-map", "0:a:0");
+    } else {
+      console.warn("No audio stream detected in the input file.");
+    }
+
+    command
       .on("start", () => {
         console.log(
           `Starting ${quality} quality conversion for file: ${file.originalname}`
@@ -124,14 +140,8 @@ app.post("/convert-youtube", async (req, res) => {
     const title = videoInfo.videoDetails.title.replace(/[\/:*?"<>|]/g, ""); // Sanitize file name
     const outputFilePath = `converted/${Date.now()}-${title}.mp4`;
 
-    const tempDir = path.join(__dirname, "temp");
-
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir);
-    }
-
-    const videoPath = path.join(tempDir, `${Date.now()}-video.mp4`);
-    const audioPath = path.join(tempDir, `${Date.now()}-audio.mp4`);
+    const videoPath = path.join(__dirname, "temp", `${Date.now()}-video.mp4`);
+    const audioPath = path.join(__dirname, "temp", `${Date.now()}-audio.mp4`);
 
     const videoStream = ytdl(url, { quality: "highestvideo" }).pipe(
       fs.createWriteStream(videoPath)
@@ -166,7 +176,7 @@ app.post("/convert-youtube", async (req, res) => {
       ffmpeg()
         .input(videoPath)
         .input(audioPath)
-        .videoCodec("h264_videotoolbox")
+        .videoCodec("libx264")
         .audioCodec("aac")
         .outputOptions("-preset", ffmpegOptions.preset)
         .outputOptions("-crf", ffmpegOptions.crf)
